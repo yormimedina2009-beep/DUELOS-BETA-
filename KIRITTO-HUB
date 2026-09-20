@@ -163,7 +163,6 @@ EspTab:CreateToggle({Name = "ESP Chams", CurrentValue = false, Flag = "Chams",
 EspTab:CreateToggle({Name = "Team Check (ignorar aliados)", CurrentValue = false, Flag = "ChamsTeam",
     Callback = function(value)
         chamsTeamCheck = value
-        -- Re-aplicar
         for plr, hl in pairs(chamsList) do
             if hl then hl:Destroy() end
         end
@@ -243,6 +242,12 @@ local aimWallCheck = false
 local aimPrediction = true
 local cachedTarget = nil
 local cachedTargetPos = nil
+
+-- Declarar variables de Auto-Shoot ANTES de updateTarget
+local autoShootEnabled = false
+local autoShootDelay = 0.12
+local predictionMultiplier = 1.0
+local currentPing = 0.1
 
 AimTab:CreateToggle({Name = "Redirigir Balas", CurrentValue = false, Flag = "SilentAim",
     Callback = function(value) silentAimEnabled = value end})
@@ -326,7 +331,9 @@ RunService.Stepped:Connect(updateHitboxes)
 -- BUSCAR TARGET
 local function updateTarget()
     if not silentAimEnabled and not autoShootEnabled then
-        cachedTarget = nil; cachedTargetPos = nil; return
+        cachedTarget = nil
+        cachedTargetPos = nil
+        return
     end
     local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
     local myChar = player.Character
@@ -399,11 +406,6 @@ end)
 -- AUTO-SHOOT CON PREDICCIÓN POR PING
 -- ============================================
 AimTab:CreateSection("Auto-Shoot")
-
-local autoShootEnabled = false
-local autoShootDelay = 0.12
-local predictionMultiplier = 1.0
-local currentPing = 0.1
 
 AimTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = false, Flag = "AutoShoot",
     Callback = function(value) autoShootEnabled = value end})
@@ -494,11 +496,11 @@ ConfigTab:CreateToggle({Name = "Auto-Execute al inyectar", CurrentValue = false,
 ConfigTab:CreateButton({Name = "Guardar en Auto-Execute", Callback = function()
     local ok = pcall(function()
         local scriptUrl = _G.KirittoScriptUrl or defaultUrl
-        local loader = 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()'            writefile("autoexec/" .. autoExecPath, loader)
-        end)
-        Rayfield:Notify({Title = "Kiritto-Hub",
-            Content = success and "Guardado en autoexec." or "Error al guardar.", Duration = 5})
-    end})
+        local loader =         writefile("autoexec/" .. autoExecPath, loader)
+    end)
+    Rayfield:Notify({Title = "Kiritto-Hub",
+        Content = ok and "Guardado en autoexec." or "Error al guardar.", Duration = 5})
+end})
 
 ConfigTab:CreateSection("Servidor")
 ConfigTab:CreateButton({Name = "Rejoin (mismo servidor)", Callback = function()
@@ -531,4 +533,3 @@ Rayfield:Notify({
     Content = "Hub cargado correctamente",
     Duration = 5
 })
-       
