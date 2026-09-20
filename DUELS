@@ -78,6 +78,89 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
+-- ============================================
+-- FPS BOOST
+-- ============================================
+PlayerTab:CreateSection("FPS Boost")
+
+local fpsBoostEnabled = false
+local originalSettings = {}
+
+PlayerTab:CreateToggle({
+    Name = "FPS Boost",
+    CurrentValue = false,
+    Flag = "FpsBoost",
+    Callback = function(value)
+        fpsBoostEnabled = value
+        if value then
+            -- Guardar configuraciones originales
+            local Lighting = game:GetService("Lighting")
+            originalSettings.GlobalShadows = Lighting.GlobalShadows
+            originalSettings.FogEnd = Lighting.FogEnd
+            originalSettings.EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale
+            originalSettings.EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale
+            
+            -- Aplicar ajustes de rendimiento
+            Lighting.GlobalShadows = false
+            Lighting.FogEnd = 500
+            Lighting.EnvironmentDiffuseScale = 0
+            Lighting.EnvironmentSpecularScale = 0
+            
+            -- Eliminar efectos post-proceso
+            for _, effect in pairs(Lighting:GetChildren()) do
+                if effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") 
+                or effect:IsA("ColorCorrectionEffect") or effect:IsA("BloomEffect") 
+                or effect:IsA("DepthOfFieldEffect") then
+                    effect.Enabled = false
+                end
+            end
+            
+            -- Eliminar partículas del workspace
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") 
+                or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end
+            
+            Rayfield:Notify({Title = "FPS Boost", Content = "Activado.", Duration = 3})
+        else
+            -- Restaurar ajustes originales
+            local Lighting = game:GetService("Lighting")
+            if originalSettings.GlobalShadows ~= nil then
+                Lighting.GlobalShadows = originalSettings.GlobalShadows
+                Lighting.FogEnd = originalSettings.FogEnd
+                Lighting.EnvironmentDiffuseScale = originalSettings.EnvironmentDiffuseScale
+                Lighting.EnvironmentSpecularScale = originalSettings.EnvironmentSpecularScale
+            end
+            
+            for _, effect in pairs(Lighting:GetChildren()) do
+                if effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") 
+                or effect:IsA("ColorCorrectionEffect") or effect:IsA("BloomEffect") 
+                or effect:IsA("DepthOfFieldEffect") then
+                    effect.Enabled = true
+                end
+            end
+            
+            Rayfield:Notify({Title = "FPS Boost", Content = "Desactivado.", Duration = 3})
+        end
+    end
+})
+
+PlayerTab:CreateButton({
+    Name = "Limpiar Partículas (manual)",
+    Callback = function()
+        local count = 0
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") 
+            or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+                count = count + 1
+            end
+        end
+        Rayfield:Notify({Title = "FPS Boost", Content = "Limpiadas " .. count .. " partículas.", Duration = 3})
+    end
+})
 end)
 
 -- PESTAÑA ESP
@@ -377,6 +460,84 @@ if debugMode then
         end
     end)
 end
+-- ============================================
+-- AUTO-SHOOT
+-- ============================================
+AimTab:CreateSection("Auto-Shoot")
+
+local autoShootEnabled = false
+local autoShootDelay = 0.1
+local autoShootFOV = 100
+
+AimTab:CreateToggle({
+    Name = "Auto-Shoot (dispara solo)",
+    CurrentValue = false,
+    Flag = "AutoShoot",
+    Callback = function(value) autoShootEnabled = value end
+})
+
+AimTab:CreateSlider({
+    Name = "FOV del Auto-Shoot",
+    Range = {50, 500},
+    Increment = 10,
+    Suffix = " px",
+    CurrentValue = 100,
+    Flag = "AutoShootFOV",
+    Callback = function(value) autoShootFOV = value end
+})
+
+AimTab:CreateSlider({
+    Name = "Delay entre disparos",
+    Range = {0.05, 1},
+    Increment = 0.05,
+    Suffix = " seg",
+    CurrentValue = 0.1,
+    Flag = "AutoShootDelay",
+    Callback = function(value) autoShootDelay = value end
+})
+
+-- Función que verifica si hay enemigo en pantalla
+local function enemyInFOV()
+    local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == player then continue end
+        local char = plr.Character
+        if not char then continue end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        if aimTeamCheck and plr.Team == player.Team then continue end
+        
+        local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+        if not head then continue end
+        
+        local screenPos, onScreen = camera:WorldToViewportPoint(head.Position)
+        if not onScreen then continue end
+        
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+        if dist <= autoShootFOV then
+            return true
+        end
+    end
+    return false
+end
+
+-- Loop de Auto-Shoot
+task.spawn(function()
+    while task.wait(autoShootDelay) do
+        if autoShootEnabled and enemyInFOV() then
+            local char = player.Character
+            if char then
+                -- Buscar el arma equipada
+                local tool = char:FindFirstChildOfClass("Tool")
+                if tool then
+                    pcall(function()
+                        tool:Activate()
+                    end)
+                end
+            end
+        end
+    end
+end)
 
 -- PESTAÑA CONFIG
 local ConfigTab = Window:CreateTab("Config", 4483362458)
