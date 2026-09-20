@@ -1,0 +1,246 @@
+-- ============================================
+-- KIRITTO-HUB
+-- Para Delta Executor
+-- ============================================
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local Window = Rayfield:CreateWindow({
+    Name = "Kiritto-Hub | Delta",
+    LoadingTitle = "Kiritto-Hub",
+    LoadingSubtitle = "Cargando...",
+    ConfigurationSaving = {Enabled = true, FolderName = "KirittoHub", FileName = "config"},
+    KeySystem = false
+})
+
+local GAME_KEYWORDS = {"Map", "Game", "Arena", "Round", "Match", "Field", "Duel"}
+local function isInGame()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
+    for _, obj in pairs(workspace:GetChildren()) do
+        for _, keyword in pairs(GAME_KEYWORDS) do
+            if string.find(obj.Name, keyword, 1, true) then return true end
+        end
+    end
+    return false
+end
+
+local cachedInGame = true
+task.spawn(function()
+    while task.wait(1) do cachedInGame = isInGame() end
+end)
+
+-- PESTAÑA PLAYER
+local PlayerTab = Window:CreateTab("Player", 4483362458)
+local noclipEnabled = false
+PlayerTab:CreateToggle({Name = "Noclip", CurrentValue = false, Flag = "Noclip",
+    Callback = function(value) noclipEnabled = value end})
+
+RunService.Stepped:Connect(function()
+    if noclipEnabled then
+        local char = player.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+            end
+        end
+    end
+end)
+
+PlayerTab:CreateSlider({Name = "WalkSpeed", Range = {16, 200}, Increment = 1, Suffix = " studs",
+    CurrentValue = 16, Flag = "Speed",
+    Callback = function(value)
+        local char = player.Character
+        if char and char:FindFirstChild("Humanoid") then char.Humanoid.WalkSpeed = value end
+    end})
+
+local tpWalkEnabled = false
+local tpSpeed = 1
+PlayerTab:CreateToggle({Name = "TP Walk", CurrentValue = false, Flag = "TPWalk",
+    Callback = function(value) tpWalkEnabled = value end})
+
+PlayerTab:CreateSlider({Name = "TP Walk Speed", Range = {1, 10}, Increment = 0.5,
+    CurrentValue = 1, Flag = "TPWalkSpeed",
+    Callback = function(value) tpSpeed = value end})
+
+RunService.RenderStepped:Connect(function()
+    if tpWalkEnabled then
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local moveDir = char.Humanoid.MoveDirection
+            if moveDir.Magnitude > 0 then
+                char.HumanoidRootPart.CFrame = char.HumanoidRootPart.CFrame + moveDir * tpSpeed
+            end
+        end
+    end
+end)
+
+-- PESTAÑA ESP
+local EspTab = Window:CreateTab("ESP", 4483362458)
+local espPlayersEnabled = false
+local espNpcEnabled = false
+local onlyInGame = true
+local espBoxColor = Color3.fromRGB(255, 255, 255)
+local espLineColor = Color3.fromRGB(255, 0, 0)
+local espNpcColor = Color3.fromRGB(0, 255, 0)
+local espDrawings = {}
+local npcDrawings = {}
+
+EspTab:CreateToggle({Name = "ESP Players", CurrentValue = false, Flag = "EspPlayers",
+    Callback = function(value) espPlayersEnabled = value end})
+EspTab:CreateToggle({Name = "ESP NPC", CurrentValue = false, Flag = "EspNpc",
+    Callback = function(value) espNpcEnabled = value end})
+EspTab:CreateToggle({Name = "Solo marcar en partida", CurrentValue = true, Flag = "OnlyInGame",
+    Callback = function(value) onlyInGame = value end})
+EspTab:CreateColorPicker({Name = "Color del Box", Color = Color3.fromRGB(255, 255, 255),
+    Flag = "EspBoxColor", Callback = function(color) espBoxColor = color end})
+EspTab:CreateColorPicker({Name = "Color de la Línea", Color = Color3.fromRGB(255, 0, 0),
+    Flag = "EspLineColor", Callback = function(color) espLineColor = color end})
+EspTab:CreateColorPicker({Name = "Color del NPC", Color = Color3.fromRGB(0, 255, 0),
+    Flag = "EspNpcColor", Callback = function(color) espNpcColor = color end})
+
+local function createESP(plr)
+    if plr == player then return end
+    local box = Drawing.new("Square")
+    box.Thickness = 1; box.Filled = false; box.Transparency = 1
+    local line = Drawing.new("Line")
+    line.Thickness = 1; line.Transparency = 1
+    espDrawings[plr] = {box = box, line = line}
+end
+local function removeESP(plr)
+    if espDrawings[plr] then
+        espDrawings[plr].box:Remove(); espDrawings[plr].line:Remove(); espDrawings[plr] = nil
+    end
+end
+for _, plr in pairs(Players:GetPlayers()) do createESP(plr) end
+Players.PlayerAdded:Connect(createESP)
+Players.PlayerRemoving:Connect(removeESP)
+
+local function isNPC(model)
+    if not model:IsA("Model") then return false end
+    if Players:GetPlayerFromCharacter(model) then return false end
+    return model:FindFirstChildOfClass("Humanoid") ~= nil and model:FindFirstChild("Head") ~= nil
+end
+local function createNpcESP(npc)
+    local box = Drawing.new("Square")
+    box.Thickness = 1; box.Filled = false; box.Transparency = 1
+    npcDrawings[npc] = {box = box}
+end
+for _, obj in pairs(workspace:GetChildren()) do
+    if isNPC(obj) then createNpcESP(obj) end
+end
+workspace.ChildAdded:Connect(function(obj)
+    task.wait(0.5)
+    if isNPC(obj) then createNpcESP(obj) end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local inGame = cachedInGame
+    for plr, drawings in pairs(espDrawings) do
+        local shouldShow = espPlayersEnabled and plr.Character and (not onlyInGame or inGame)
+        if not shouldShow then
+            drawings.box.Visible = false; drawings.line.Visible = false; continue
+        end
+        local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+        local head = plr.Character:FindFirstChild("Head")
+        local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+        if not hrp or not head or not humanoid or humanoid.Health <= 0 then
+            drawings.box.Visible = false; drawings.line.Visible = false; continue
+        end
+        local headPos, headOnScreen = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+        local hrpPos, hrpOnScreen = camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+        if headOnScreen or hrpOnScreen then
+            local height = math.abs(headPos.Y - hrpPos.Y)
+            local width = height / 2
+            drawings.box.Size = Vector2.new(width, height)
+            drawings.box.Position = Vector2.new(headPos.X - width/2, headPos.Y)
+            drawings.box.Color = espBoxColor; drawings.box.Visible = true
+            drawings.line.From = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y)
+            drawings.line.To = Vector2.new(headPos.X, headPos.Y)
+            drawings.line.Color = espLineColor; drawings.line.Visible = true
+        else
+            drawings.box.Visible = false; drawings.line.Visible = false
+        end
+    end
+    for npc, drawings in pairs(npcDrawings) do
+        local shouldShow = espNpcEnabled and npc.Parent and (not onlyInGame or inGame)
+        if not shouldShow then drawings.box.Visible = false; continue end
+        local head = npc:FindFirstChild("Head")
+        local humanoid = npc:FindFirstChildOfClass("Humanoid")
+        if not head or not humanoid or humanoid.Health <= 0 then
+            drawings.box.Visible = false; continue
+        end
+        local headPos, headOnScreen = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
+        local hrpPos, hrpOnScreen = camera:WorldToViewportPoint(head.Position - Vector3.new(0, 3, 0))
+        if headOnScreen or hrpOnScreen then
+            local height = math.abs(headPos.Y - hrpPos.Y)
+            local width = height / 2
+            drawings.box.Size = Vector2.new(width, height)
+            drawings.box.Position = Vector2.new(headPos.X - width/2, headPos.Y)
+            drawings.box.Color = espNpcColor; drawings.box.Visible = true
+        else drawings.box.Visible = false end
+    end
+end)
+
+-- PESTAÑA DISPARO
+local AimTab = Window:CreateTab("Disparo", 4483362458)
+local silentAimEnabled = false
+local aimPart = "Head"
+local aimFOV = 300
+local aimTeamCheck = false
+local aimWallCheck = false
+local debugMode = false
+local cachedTarget = nil
+local cachedTargetPos = nil
+
+AimTab:CreateToggle({Name = "Redirigir Balas", CurrentValue = false, Flag = "SilentAim",
+    Callback = function(value) silentAimEnabled = value end})
+AimTab:CreateDropdown({Name = "Parte objetivo",
+    Options = {"Head", "Torso", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
+    CurrentOption = {"Head"}, Flag = "AimPart",
+    Callback = function(option) aimPart = option[1] end})
+AimTab:CreateSlider({Name = "FOV", Range = {50, 800}, Increment = 10, Suffix = " px",
+    CurrentValue = 300, Flag = "AimFOV",
+    Callback = function(value) aimFOV = value end})
+AimTab:CreateToggle({Name = "Team Check", CurrentValue = false, Flag = "AimTeam",
+    Callback = function(value) aimTeamCheck = value end})
+AimTab:CreateToggle({Name = "Wall Check", CurrentValue = false, Flag = "AimWall",
+    Callback = function(value) aimWallCheck = value end})
+AimTab:CreateToggle({Name = "Modo Debug", CurrentValue = false, Flag = "DebugMode",
+    Callback = function(value) debugMode = value end})
+
+-- HITBOX EXPANDER
+AimTab:CreateSection("Hitbox Expander")
+local hitboxEnabled = false
+local hitboxSize = 15
+local hitboxTransparency = 0.7
+local hitboxColor = Color3.fromRGB(255, 0, 0)
+local originalSizes = {}
+
+AimTab:CreateToggle({Name = "Hitbox Expander", CurrentValue = false, Flag = "HitboxExp",
+    Callback = function(value) hitboxEnabled = value end})
+AimTab:CreateSlider({Name = "Tamaño", Range = {5, 50}, Increment = 1, Suffix = " studs",
+    CurrentValue = 15, Flag = "HitboxSize",
+    Callback = function(value) hitboxSize = value end})
+AimTab:CreateSlider({Name = "Transparencia", Range = {0, 1}, Increment = 0.1,
+    CurrentValue = 0.7, Flag = "HitboxTransp",
+    Callback = function(value) hitboxTransparency = value end})
+AimTab:CreateColorPicker({Name = "Color del Hitbox", Color = Color3.fromRGB(255, 0, 0),
+    Flag = "HitboxColor", Callback = function(color) hitboxColor = color end})
+AimTab:CreateButton({Name = "Aplicar cambios", Callback = function()
+    for _, data in pairs(originalSizes) do
+        if data.part and data.part.Parent then
+            data.part.Size = data.size
+            data.part.Transparency = data.transparency
+            data.part.Color = data.color
+            data.part.Material = data.material
+        end
+    end
+    originalSizes = {}
+    Rayfield:Notify({Title = "Hitbox", Content = "Cambios aplicados.", Duration = 3})
+end})
