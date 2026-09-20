@@ -8,6 +8,11 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+-- Variables globales que se usan en varias pestañas
+local chamsEnabled = false
+local silentAimEnabled = false
+local autoCollectEnabled = false
+
 local Window = Rayfield:CreateWindow({
     Name = "Kiritto-Hub | Delta",
     LoadingTitle = "Kiritto-Hub",
@@ -142,7 +147,6 @@ end})
 -- ============================================
 local EspTab = Window:CreateTab("ESP", 4483362458)
 
-local chamsEnabled = false
 local chamsColor = Color3.fromRGB(255, 0, 0)
 local chamsTransparency = 0.5
 local chamsOutline = true
@@ -234,20 +238,12 @@ end)
 -- PESTAÑA DISPARO
 -- ============================================
 local AimTab = Window:CreateTab("Disparo", 4483362458)
-local silentAimEnabled = false
 local aimPart = "Head"
 local aimFOV = 300
 local aimTeamCheck = false
 local aimWallCheck = false
-local aimPrediction = true
 local cachedTarget = nil
 local cachedTargetPos = nil
-
--- Declarar variables de Auto-Shoot ANTES de updateTarget
-local autoShootEnabled = false
-local autoShootDelay = 0.12
-local predictionMultiplier = 1.0
-local currentPing = 0.1
 
 AimTab:CreateToggle({Name = "Redirigir Balas", CurrentValue = false, Flag = "SilentAim",
     Callback = function(value) silentAimEnabled = value end})
@@ -258,12 +254,23 @@ AimTab:CreateDropdown({Name = "Parte objetivo",
 AimTab:CreateSlider({Name = "FOV", Range = {50, 800}, Increment = 10, Suffix = " px",
     CurrentValue = 300, Flag = "AimFOV",
     Callback = function(value) aimFOV = value end})
-AimTab:CreateToggle({Name = "Predicción de movimiento", CurrentValue = true, Flag = "AimPrediction",
-    Callback = function(value) aimPrediction = value end})
 AimTab:CreateToggle({Name = "Team Check", CurrentValue = false, Flag = "AimTeam",
     Callback = function(value) aimTeamCheck = value end})
 AimTab:CreateToggle({Name = "Wall Check", CurrentValue = false, Flag = "AimWall",
     Callback = function(value) aimWallCheck = value end})
+
+-- AUTO-SHOOT EN ARREGLO (placeholder)
+AimTab:CreateSection("Auto-Shoot")
+AimTab:CreateToggle({Name = "Auto-Shoot (en arreglo)", CurrentValue = false, Flag = "AutoShootRepair",
+    Callback = function(value)
+        if value then
+            Rayfield:Notify({
+                Title = "Kiritto-Hub",
+                Content = "Auto-Shoot está en arreglo. Pronto volverá.",
+                Duration = 4
+            })
+        end
+    end})
 
 -- HITBOX
 AimTab:CreateSection("Hitbox Expander")
@@ -330,7 +337,7 @@ RunService.Stepped:Connect(updateHitboxes)
 
 -- BUSCAR TARGET
 local function updateTarget()
-    if not silentAimEnabled and not autoShootEnabled then
+    if not silentAimEnabled then
         cachedTarget = nil
         cachedTargetPos = nil
         return
@@ -338,6 +345,7 @@ local function updateTarget()
     local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
     local myChar = player.Character
     local closest = nil
+    local closestPos = nil
     local shortestDist = aimFOV
     for _, plr in pairs(Players:GetPlayers()) do
         if plr == player then continue end
@@ -364,8 +372,10 @@ local function updateTarget()
         end
         shortestDist = dist
         closest = plr
+        closestPos = targetPart.Position
     end
     cachedTarget = closest
+    cachedTargetPos = closestPos
 end
 RunService.RenderStepped:Connect(updateTarget)
 
@@ -403,56 +413,151 @@ pcall(function()
 end)
 
 -- ============================================
--- AUTO-SHOOT CON PREDICCIÓN POR PING
+-- PESTAÑA FARMEAR
 -- ============================================
-AimTab:CreateSection("Auto-Shoot")
+local FarmTab = Window:CreateTab("Farmear", 4483362458)
 
-AimTab:CreateToggle({Name = "Auto-Shoot", CurrentValue = false, Flag = "AutoShoot",
-    Callback = function(value) autoShootEnabled = value end})
-AimTab:CreateSlider({Name = "Delay entre disparos", Range = {0.05, 0.5}, Increment = 0.01,
-    Suffix = " seg", CurrentValue = 0.12, Flag = "AutoShootDelay",
-    Callback = function(value) autoShootDelay = value end})
-AimTab:CreateSlider({Name = "Multiplicador de predicción", Range = {0, 3}, Increment = 0.1,
-    CurrentValue = 1.0, Flag = "PredictMult",
-    Callback = function(value) predictionMultiplier = value end})
+local moveSpeed = 250
+local collectRange = 500
+local moveTowards = true
+local originals = {}
 
--- Leer ping real
-task.spawn(function()
-    while task.wait(1) do
-        local ok, ping = pcall(function() return player:GetNetworkPing() end)
-        if ok and ping and ping > 0 then currentPing = ping end
+FarmTab:CreateSection("Auto-Recoger Cristales")
+
+FarmTab:CreateToggle({Name = "🔮 Auto-Recoger Cristales", CurrentValue = false, Flag = "AutoCollect",
+    Callback = function(value)
+        autoCollectEnabled = value
+        if not value then
+            for part, data in pairs(originals) do
+                if part and part.Parent then
+                    part.Size = data.size
+                    part.Transparency = data.transparency
+                    part.Color = data.color
+                    part.Material = data.material
+                    part.CanCollide = data.canCollide
+                end
+            end
+            originals = {}
+        end
+    end})
+
+FarmTab:CreateSlider({Name = "Velocidad de movimiento", Range = {50, 500}, Increment = 25,
+    Suffix = " studs", CurrentValue = 250, Flag = "MoveSpeed",
+    Callback = function(value) moveSpeed = value end})
+
+FarmTab:CreateSlider({Name = "Rango del Touch (hitbox)", Range = {50, 1000}, Increment = 25,
+    Suffix = " studs", CurrentValue = 500, Flag = "TouchRange",
+    Callback = function(value) collectRange = value end})
+
+FarmTab:CreateToggle({Name = "Mover al jugador automáticamente", CurrentValue = true, Flag = "MoveTowards",
+    Callback = function(value) moveTowards = value end})
+
+FarmTab:CreateButton({Name = "🔥 Modo Turbo (todo al máximo)", Callback = function()
+    moveSpeed = 500
+    collectRange = 1000
+    moveTowards = true
+    Rayfield:Notify({Title = "Farmear", Content = "Modo TURBO activado", Duration = 3})
+end})
+
+FarmTab:CreateButton({Name = "Restaurar cristales", Callback = function()
+    for part, data in pairs(originals) do
+        if part and part.Parent then
+            part.Size = data.size
+            part.Transparency = data.transparency
+            part.Color = data.color
+            part.Material = data.material
+            part.CanCollide = data.canCollide
+        end
     end
-end)
+    originals = {}
+    Rayfield:Notify({Title = "Farmear", Content = "Restaurado.", Duration = 3})
+end})
 
--- Posición predicha según ping
-local function getPredictedPos()
-    if not cachedTarget or not cachedTarget.Character then return nil end
-    local targetPart = cachedTarget.Character:FindFirstChild(aimPart)
-        or cachedTarget.Character:FindFirstChild("HumanoidRootPart")
-    if not targetPart then return nil end
-    local pos = targetPart.Position
-    local vel = targetPart.Velocity or Vector3.new(0, 0, 0)
-    local predictTime = currentPing * predictionMultiplier
-    local predicted = pos + (vel * predictTime)
-    predicted = predicted + Vector3.new(0, 0.5 * 50 * predictTime * predictTime, 0)
-    return predicted
+FarmTab:CreateSection("Auto-Farm de Kills")
+
+FarmTab:CreateButton({Name = "🎯 Activar combo Farm Kills", Callback = function()
+    silentAimEnabled = true
+    chamsEnabled = true
+    Rayfield:Notify({
+        Title = "Farmear",
+        Content = "Combo activado: Silent Aim + Chams",
+        Duration = 5
+    })
+end})
+
+FarmTab:CreateButton({Name = "❌ Desactivar combo Farm Kills", Callback = function()
+    silentAimEnabled = false
+    chamsEnabled = false
+    Rayfield:Notify({Title = "Farmear", Content = "Combo desactivado.", Duration = 3})
+end})
+
+-- Lógica del Auto-Recoger
+local function findCrystals()
+    local crystals = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj.Name == "Crystal" and obj:IsA("BasePart") then
+            table.insert(crystals, obj)
+        end
+    end
+    return crystals
 end
 
-RunService.RenderStepped:Connect(function()
-    if (silentAimEnabled or autoShootEnabled) and cachedTarget then
-        cachedTargetPos = getPredictedPos()
+local function expandCrystal(touchPart)
+    if not originals[touchPart] then
+        originals[touchPart] = {
+            size = touchPart.Size,
+            transparency = touchPart.Transparency,
+            color = touchPart.Color,
+            material = touchPart.Material,
+            canCollide = touchPart.CanCollide
+        }
+    end
+    touchPart.Size = Vector3.new(collectRange, collectRange, collectRange)
+    touchPart.Transparency = 1
+    touchPart.CanCollide = false
+    touchPart.Anchored = true
+end
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if not autoCollectEnabled then continue end
+        local char = player.Character
+        if not char then continue end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+        
+        local crystals = findCrystals()
+        for _, crystal in pairs(crystals) do
+            local parent = crystal.Parent
+            if parent then
+                local touch = parent:FindFirstChild("Touch")
+                if touch then expandCrystal(touch) end
+            end
+        end
+        
+        if #crystals == 0 then continue end
+        
+        if moveTowards then
+            table.sort(crystals, function(a, b)
+                return (a.Position - hrp.Position).Magnitude < (b.Position - hrp.Position).Magnitude
+            end)
+            local target = crystals[1]
+            if target then
+                local dist = (target.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local direction = (target.Position - hrp.Position).Unit
+                    local moveDistance = math.min(moveSpeed * 0.05, dist)
+                    hrp.CFrame = hrp.CFrame + direction * moveDistance
+                end
+            end
+        end
     end
 end)
 
--- Loop Auto-Shoot
 task.spawn(function()
-    while task.wait(autoShootDelay) do
-        if autoShootEnabled and cachedTarget and cachedTargetPos then
-            local char = player.Character
-            if char then
-                local tool = char:FindFirstChildOfClass("Tool")
-                if tool then pcall(function() tool:Activate() end) end
-            end
+    while task.wait(2) do
+        for part in pairs(originals) do
+            if not part.Parent then originals[part] = nil end
         end
     end
 end)
@@ -496,7 +601,8 @@ ConfigTab:CreateToggle({Name = "Auto-Execute al inyectar", CurrentValue = false,
 ConfigTab:CreateButton({Name = "Guardar en Auto-Execute", Callback = function()
     local ok = pcall(function()
         local scriptUrl = _G.KirittoScriptUrl or defaultUrl
-        local loader =         writefile("autoexec/" .. autoExecPath, loader)
+        local loader = 'loadstring(game:HttpGet("' .. scriptUrl .. '"))()'
+        writefile("autoexec/" .. autoExecPath, loader)
     end)
     Rayfield:Notify({Title = "Kiritto-Hub",
         Content = ok and "Guardado en autoexec." or "Error al guardar.", Duration = 5})
